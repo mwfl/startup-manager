@@ -1,6 +1,6 @@
 # Startup Manager design
 
-Status: MVP design baseline, 2026-08-17
+Status: design baseline and implementation roadmap, 2026-08-17
 
 ## Product boundary
 
@@ -11,7 +11,7 @@ The application manages user-facing auto-start mechanisms. The MVP includes:
 | `HKCU/HKLM ...\\CurrentVersion\\Run` | yes | yes | yes | yes |
 | 32-bit and 64-bit registry views | yes | yes | yes | yes |
 | Per-user/all-users Startup folders | yes | yes | yes | shortcut |
-| Task Scheduler logon tasks | yes | yes | yes | later |
+| Task Scheduler logon tasks | planned | planned | planned | later |
 
 The MVP excludes services, drivers, browser extensions, AppX background tasks,
 Winlogon shell values, Group Policy, and undocumented startup locations. Those
@@ -54,11 +54,10 @@ reversible behavior:
 - **Task Scheduler:** use the registered task's native enabled flag. Preserve
   the previous flag in the operation log.
 
-Recovery records live under `%LOCALAPPDATA%\\MWFL\\StartupManager\\recovery` for
-user entries and `%ProgramData%\\MWFL\\StartupManager\\recovery` for machine
-entries. Records use a versioned JSON envelope; registry payload bytes are
-base64 encoded. Updates are written atomically. Recovery records are retained
-after re-enable until explicit cleanup so interrupted operations remain auditable.
+The preview's reversible store is source-native: disabled registry values move
+to `Software\\MWFL\\StartupManager\\DisabledRun`, while startup-folder files move
+under `%LOCALAPPDATA%\\MWFL\\StartupManager\\DisabledStartup`. A versioned JSON
+operation journal remains planned before machine-wide mutation is enabled.
 
 ## Architecture
 
@@ -160,4 +159,3 @@ created with IShellLink and IPersistFile. Registry strings default to `REG_SZ`.
   exported recovery bundle in v1.
 - Retention policy for committed recovery records.
 - Whether Task Scheduler task creation belongs in v1.0 or v1.1.
-

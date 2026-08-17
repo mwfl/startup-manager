@@ -5,7 +5,8 @@
       "name": "vs2026-x64",
       "generator": "Visual Studio 18 2026",
       "architecture": "x64",
-      "binaryDir": "${sourceDir}/build/vs2026-x64"
+      "binaryDir": "${sourceDir}/build/vs2026-x64",
+      "cacheVariables": { "STARTUP_MANAGER_USE_LOCAL_MWFL": "ON" }
     }
   ],
   "buildPresets": [
@@ -24,4 +25,3 @@
     }
   ]
 }
-

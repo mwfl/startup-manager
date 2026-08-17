@@ -1,5 +1,6 @@
 /build/
+/dist/
+/dist-preview/
 /.vs/
 *.user
 *.suo
-

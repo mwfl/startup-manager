@@ -1,11 +1,14 @@
-name: CI
+name: Release
 
 on:
   push:
-  pull_request:
+    tags: ["v*"]
+
+permissions:
+  contents: write
 
 jobs:
-  build:
+  release:
     runs-on: windows-2025
     steps:
       - uses: actions/checkout@v4
@@ -14,7 +17,9 @@ jobs:
       - run: cmake --build build
       - run: ctest --test-dir build --output-on-failure
       - run: cmake --install build --prefix dist
-      - uses: actions/upload-artifact@v4
+      - shell: pwsh
+        run: Compress-Archive -Path dist/* -DestinationPath startup-manager-windows-x64.zip
+      - uses: softprops/action-gh-release@v2
         with:
-          name: startup-manager-windows-x64
-          path: dist/
+          generate_release_notes: true
+          files: startup-manager-windows-x64.zip

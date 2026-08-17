@@ -7,22 +7,29 @@ namespace startup_manager {
 
 enum class StartupSource { registry_run, startup_folder, scheduled_task };
 enum class StartupScope { current_user, all_users };
-enum class StartupState { enabled, disabled, unavailable };
+enum class StartupState { enabled, disabled };
 
 struct StartupEntry {
   std::wstring id;
-  std::wstring fingerprint;
   std::wstring name;
   std::wstring command;
-  std::wstring executable;
-  std::wstring arguments;
   std::wstring location;
-  std::wstring publisher;
   StartupSource source{};
   StartupScope scope{};
   StartupState state{};
-  bool requires_elevation{};
+  bool writable{};
+  bool target_exists{};
 };
 
-}  // namespace startup_manager
+struct OperationResult {
+  bool succeeded{};
+  std::wstring message;
+  std::uint32_t native_error{};
+};
 
+std::wstring SourceName(StartupSource source);
+std::wstring ScopeName(StartupScope scope);
+std::wstring StateName(StartupState state);
+std::wstring ExtractExecutable(std::wstring_view command);
+
+}  // namespace startup_manager
