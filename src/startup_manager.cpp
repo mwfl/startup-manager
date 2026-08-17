@@ -181,6 +181,12 @@ OperationResult MoveRegistry(const StartupEntry& entry, bool enabling) {
     ::RegDeleteValueW(destination.get(), name.c_str());
     return Failure(L"Remove source value", status);
   }
+  DWORD verified_size = 0;
+  if (::RegQueryValueExW(destination.get(), name.c_str(), nullptr, nullptr, nullptr,
+                         &verified_size) != ERROR_SUCCESS ||
+      ::RegQueryValueExW(source.get(), name.c_str(), nullptr, nullptr, nullptr, nullptr) ==
+          ERROR_SUCCESS)
+    return {false, L"Windows did not confirm the requested startup state", ERROR_WRITE_FAULT};
   return {true, enabling ? L"Startup entry enabled" : L"Startup entry disabled", 0};
 }
 
@@ -199,6 +205,9 @@ OperationResult MoveFolder(const StartupEntry& entry, bool enabling) {
   if (std::filesystem::exists(destination, error))
     return {false, L"Destination already exists: " + destination.wstring(), ERROR_ALREADY_EXISTS};
   std::filesystem::rename(source, destination, error);
+  if (!error && (!std::filesystem::exists(destination, error) ||
+                 std::filesystem::exists(source, error)))
+    return {false, L"Windows did not confirm the moved startup entry", ERROR_WRITE_FAULT};
   return error ? OperationResult{false, L"Move startup entry: " + ErrorCodeText(error),
                                  static_cast<std::uint32_t>(error.value())}
                : OperationResult{true, enabling ? L"Startup entry enabled"
@@ -319,10 +328,12 @@ OperationResult SetTaskEnabled(const StartupEntry& entry, bool enabled) {
   const auto task = OpenTask(entry.location);
   if (!task) return {false, L"Scheduled task could not be opened", ERROR_FILE_NOT_FOUND};
   const auto status = task->put_Enabled(enabled ? VARIANT_TRUE : VARIANT_FALSE);
-  return SUCCEEDED(status)
-             ? OperationResult{true, enabled ? L"Scheduled task enabled"
-                                              : L"Scheduled task disabled", 0}
-             : Failure(L"Update scheduled task", HRESULT_CODE(status));
+  if (FAILED(status)) return Failure(L"Update scheduled task", HRESULT_CODE(status));
+  VARIANT_BOOL verified = VARIANT_FALSE;
+  if (FAILED(task->get_Enabled(&verified)) || (verified == VARIANT_TRUE) != enabled)
+    return {false, L"Windows did not confirm the requested scheduled-task state",
+            ERROR_WRITE_FAULT};
+  return {true, enabled ? L"Scheduled task enabled" : L"Scheduled task disabled", 0};
 }
 }  // namespace
 
@@ -438,8 +449,11 @@ OperationResult Delete(const StartupEntry& entry) {
     if (status != ERROR_SUCCESS) return Failure(L"Open startup key", status);
     UniqueRegKey key(raw);
     status = ::RegDeleteValueW(key.get(), name.c_str());
-    return status == ERROR_SUCCESS ? OperationResult{true, L"Startup entry deleted", 0}
-                                   : Failure(L"Delete startup value", status);
+    if (status != ERROR_SUCCESS) return Failure(L"Delete startup value", status);
+    if (::RegQueryValueExW(key.get(), name.c_str(), nullptr, nullptr, nullptr, nullptr) ==
+        ERROR_SUCCESS)
+      return {false, L"Windows did not confirm deletion", ERROR_WRITE_FAULT};
+    return {true, L"Startup entry deleted", 0};
   }
   std::error_code error;
   const bool removed = std::filesystem::remove(entry.location, error);
@@ -466,8 +480,13 @@ OperationResult AddCurrentUserRun(std::wstring name, const std::filesystem::path
   const auto bytes = static_cast<DWORD>((command.size() + 1) * sizeof(wchar_t));
   const auto written = ::RegSetValueExW(key.get(), name.c_str(), 0, REG_SZ,
                                         reinterpret_cast<const BYTE*>(command.c_str()), bytes);
-  return written == ERROR_SUCCESS ? OperationResult{true, L"Startup entry added", 0}
-                                  : Failure(L"Add startup entry", written);
+  if (written != ERROR_SUCCESS) return Failure(L"Add startup entry", written);
+  DWORD verified_size = 0;
+  if (::RegQueryValueExW(key.get(), name.c_str(), nullptr, nullptr, nullptr, &verified_size) !=
+          ERROR_SUCCESS ||
+      verified_size != bytes)
+    return {false, L"Windows did not confirm the new startup entry", ERROR_WRITE_FAULT};
+  return {true, L"Startup entry added", 0};
 }
 
 }  // namespace startup_manager
