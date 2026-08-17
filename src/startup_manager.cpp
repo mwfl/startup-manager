@@ -7,6 +7,8 @@
 #include <knownfolders.h>
 #include <memory>
 #include <shlobj.h>
+#include <taskschd.h>
+#include <wrl/client.h>
 
 namespace startup_manager {
 namespace {
@@ -15,6 +17,15 @@ constexpr wchar_t kDisabledKey[] = L"Software\\MWFL\\StartupManager\\DisabledRun
 
 struct RegKeyCloser { void operator()(HKEY value) const noexcept { if (value) ::RegCloseKey(value); } };
 using UniqueRegKey = std::unique_ptr<std::remove_pointer_t<HKEY>, RegKeyCloser>;
+using Microsoft::WRL::ComPtr;
+
+struct BstrCloser { void operator()(wchar_t* value) const noexcept { ::SysFreeString(value); } };
+using UniqueBstr = std::unique_ptr<wchar_t, BstrCloser>;
+
+std::wstring TakeBstr(BSTR raw) {
+  UniqueBstr value(raw);
+  return raw ? std::wstring(raw, ::SysStringLen(raw)) : std::wstring{};
+}
 
 std::wstring ErrorText(DWORD error) {
   wchar_t* raw = nullptr;
@@ -118,6 +129,7 @@ void DiscoverFolder(DiscoveryResult& result, const std::filesystem::path& folder
   for (const auto& item : std::filesystem::directory_iterator(folder, error)) {
     if (error) break;
     if (!item.is_regular_file(error)) continue;
+    if (_wcsicmp(item.path().filename().c_str(), L"desktop.ini") == 0) continue;
     result.entries.push_back({L"folder:" + std::to_wstring(static_cast<int>(scope)) + L":" +
                                   std::to_wstring(static_cast<int>(state)) + L":" +
                                   item.path().wstring(),
@@ -192,7 +204,138 @@ OperationResult MoveFolder(const StartupEntry& entry, bool enabling) {
                : OperationResult{true, enabling ? L"Startup entry enabled"
                                                   : L"Startup entry disabled", 0};
 }
+
+ComPtr<ITaskService> ConnectTaskService() {
+  ComPtr<ITaskService> service;
+  if (FAILED(::CoCreateInstance(CLSID_TaskScheduler, nullptr, CLSCTX_INPROC_SERVER,
+                                IID_PPV_ARGS(&service)))) return {};
+  VARIANT empty{};
+  ::VariantInit(&empty);
+  if (FAILED(service->Connect(empty, empty, empty, empty))) return {};
+  return service;
+}
+
+void DiscoverTaskFolder(DiscoveryResult& result, ITaskFolder* folder) {
+  ComPtr<IRegisteredTaskCollection> tasks;
+  if (SUCCEEDED(folder->GetTasks(TASK_ENUM_HIDDEN, &tasks)) && tasks) {
+    LONG count = 0;
+    tasks->get_Count(&count);
+    for (LONG index = 1; index <= count; ++index) {
+      VARIANT item{};
+      item.vt = VT_I4;
+      item.lVal = index;
+      ComPtr<IRegisteredTask> task;
+      if (FAILED(tasks->get_Item(item, &task)) || !task) continue;
+      ComPtr<ITaskDefinition> definition;
+      ComPtr<ITriggerCollection> triggers;
+      if (FAILED(task->get_Definition(&definition)) || !definition ||
+          FAILED(definition->get_Triggers(&triggers)) || !triggers) continue;
+      LONG trigger_count = 0;
+      triggers->get_Count(&trigger_count);
+      bool starts_at_logon = false;
+      for (LONG trigger_index = 1; trigger_index <= trigger_count; ++trigger_index) {
+        ComPtr<ITrigger> trigger;
+        if (SUCCEEDED(triggers->get_Item(trigger_index, &trigger)) && trigger) {
+          TASK_TRIGGER_TYPE2 type{};
+          if (SUCCEEDED(trigger->get_Type(&type)) && type == TASK_TRIGGER_LOGON) {
+            starts_at_logon = true;
+            break;
+          }
+        }
+      }
+      if (!starts_at_logon) continue;
+      BSTR raw_name = nullptr, raw_path = nullptr;
+      VARIANT_BOOL enabled = VARIANT_FALSE;
+      task->get_Name(&raw_name);
+      task->get_Path(&raw_path);
+      task->get_Enabled(&enabled);
+      const auto name = TakeBstr(raw_name);
+      const auto path = TakeBstr(raw_path);
+      std::wstring command;
+      ComPtr<IActionCollection> actions;
+      if (SUCCEEDED(definition->get_Actions(&actions)) && actions) {
+        LONG action_count = 0;
+        actions->get_Count(&action_count);
+        if (action_count > 0) {
+          ComPtr<IAction> action;
+          if (SUCCEEDED(actions->get_Item(1, &action)) && action) {
+            ComPtr<IExecAction> execute;
+            if (SUCCEEDED(action.As(&execute)) && execute) {
+              BSTR raw_executable = nullptr, raw_arguments = nullptr;
+              execute->get_Path(&raw_executable);
+              execute->get_Arguments(&raw_arguments);
+              command = TakeBstr(raw_executable);
+              const auto arguments = TakeBstr(raw_arguments);
+              if (!arguments.empty()) command += L" " + arguments;
+            }
+          }
+        }
+      }
+      const auto executable = ExtractExecutable(command);
+      result.entries.push_back({L"task:" + path, name, command, path,
+                                StartupSource::scheduled_task, StartupScope::all_users,
+                                enabled == VARIANT_TRUE ? StartupState::enabled
+                                                        : StartupState::disabled,
+                                IsProcessElevated(),
+                                executable.empty() || std::filesystem::exists(executable)});
+    }
+  }
+  ComPtr<ITaskFolderCollection> folders;
+  if (FAILED(folder->GetFolders(0, &folders)) || !folders) return;
+  LONG count = 0;
+  folders->get_Count(&count);
+  for (LONG index = 1; index <= count; ++index) {
+    VARIANT item{};
+    item.vt = VT_I4;
+    item.lVal = index;
+    ComPtr<ITaskFolder> child;
+    if (SUCCEEDED(folders->get_Item(item, &child)) && child)
+      DiscoverTaskFolder(result, child.Get());
+  }
+}
+
+ComPtr<IRegisteredTask> OpenTask(std::wstring_view path,
+                                 ComPtr<ITaskFolder>* owner_folder = nullptr,
+                                 std::wstring* task_name = nullptr) {
+  const auto slash = path.find_last_of(L'\\');
+  const std::wstring folder_path = slash == 0 ? L"\\" : std::wstring(path.substr(0, slash));
+  const std::wstring name = slash == std::wstring_view::npos
+                                ? std::wstring(path)
+                                : std::wstring(path.substr(slash + 1));
+  const auto service = ConnectTaskService();
+  if (!service) return {};
+  ComPtr<ITaskFolder> folder;
+  const UniqueBstr folder_bstr(::SysAllocString(folder_path.c_str()));
+  if (FAILED(service->GetFolder(folder_bstr.get(), &folder)) || !folder) return {};
+  ComPtr<IRegisteredTask> task;
+  const UniqueBstr name_bstr(::SysAllocString(name.c_str()));
+  if (FAILED(folder->GetTask(name_bstr.get(), &task))) return {};
+  if (owner_folder) *owner_folder = folder;
+  if (task_name) *task_name = name;
+  return task;
+}
+
+OperationResult SetTaskEnabled(const StartupEntry& entry, bool enabled) {
+  const auto task = OpenTask(entry.location);
+  if (!task) return {false, L"Scheduled task could not be opened", ERROR_FILE_NOT_FOUND};
+  const auto status = task->put_Enabled(enabled ? VARIANT_TRUE : VARIANT_FALSE);
+  return SUCCEEDED(status)
+             ? OperationResult{true, enabled ? L"Scheduled task enabled"
+                                              : L"Scheduled task disabled", 0}
+             : Failure(L"Update scheduled task", HRESULT_CODE(status));
+}
 }  // namespace
+
+bool IsProcessElevated() {
+  HANDLE raw_token = nullptr;
+  if (!::OpenProcessToken(::GetCurrentProcess(), TOKEN_QUERY, &raw_token)) return false;
+  const auto close_token = [](HANDLE value) { if (value) ::CloseHandle(value); };
+  const std::unique_ptr<void, decltype(close_token)> token(raw_token, close_token);
+  TOKEN_ELEVATION elevation{};
+  DWORD size = 0;
+  return ::GetTokenInformation(token.get(), TokenElevation, &elevation, sizeof(elevation),
+                               &size) && elevation.TokenIsElevated != 0;
+}
 
 std::wstring SourceName(StartupSource source) {
   switch (source) {
@@ -223,11 +366,13 @@ std::wstring ExtractExecutable(std::wstring_view command) {
 
 DiscoveryResult Discover() {
   DiscoveryResult result;
+  const bool elevated = IsProcessElevated();
+  const auto initialized = ::CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+  DiscoverRegistryView(result, HKEY_CURRENT_USER, StartupScope::current_user,
+                       KEY_WOW64_64KEY, kRunKey, StartupState::enabled);
+  DiscoverRegistryView(result, HKEY_CURRENT_USER, StartupScope::current_user,
+                       KEY_WOW64_64KEY, kDisabledKey, StartupState::disabled);
   for (const auto view : {KEY_WOW64_64KEY, KEY_WOW64_32KEY}) {
-    DiscoverRegistryView(result, HKEY_CURRENT_USER, StartupScope::current_user, view, kRunKey,
-                         StartupState::enabled);
-    DiscoverRegistryView(result, HKEY_CURRENT_USER, StartupScope::current_user, view,
-                         kDisabledKey, StartupState::disabled);
     DiscoverRegistryView(result, HKEY_LOCAL_MACHINE, StartupScope::all_users, view, kRunKey,
                          StartupState::enabled);
     DiscoverRegistryView(result, HKEY_LOCAL_MACHINE, StartupScope::all_users, view,
@@ -241,24 +386,47 @@ DiscoveryResult Discover() {
                  StartupScope::current_user, StartupState::disabled);
   DiscoverFolder(result, DisabledFolder(StartupScope::all_users), StartupScope::all_users,
                  StartupState::disabled);
+  if (const auto service = ConnectTaskService(); service) {
+    ComPtr<ITaskFolder> root;
+    const UniqueBstr root_path(::SysAllocString(L"\\"));
+    if (SUCCEEDED(service->GetFolder(root_path.get(), &root)) && root)
+      DiscoverTaskFolder(result, root.Get());
+  } else {
+    result.diagnostics.push_back(L"Task Scheduler could not be read.");
+  }
   std::ranges::sort(result.entries, [](const auto& a, const auto& b) {
     if (a.state != b.state) return a.state < b.state;
     return _wcsicmp(a.name.c_str(), b.name.c_str()) < 0;
   });
+  if (elevated)
+    for (auto& entry : result.entries) entry.writable = true;
+  if (SUCCEEDED(initialized)) ::CoUninitialize();
   return result;
 }
 
 OperationResult Disable(const StartupEntry& entry) {
   if (entry.state != StartupState::enabled) return {false, L"Entry is already disabled", 0};
+  if (entry.source == StartupSource::scheduled_task) return SetTaskEnabled(entry, false);
   return entry.source == StartupSource::registry_run ? MoveRegistry(entry, false)
                                                      : MoveFolder(entry, false);
 }
 OperationResult Enable(const StartupEntry& entry) {
   if (entry.state != StartupState::disabled) return {false, L"Entry is already enabled", 0};
+  if (entry.source == StartupSource::scheduled_task) return SetTaskEnabled(entry, true);
   return entry.source == StartupSource::registry_run ? MoveRegistry(entry, true)
                                                      : MoveFolder(entry, true);
 }
 OperationResult Delete(const StartupEntry& entry) {
+  if (entry.source == StartupSource::scheduled_task) {
+    ComPtr<ITaskFolder> folder;
+    std::wstring name;
+    if (!OpenTask(entry.location, &folder, &name) || !folder)
+      return {false, L"Scheduled task could not be opened", ERROR_FILE_NOT_FOUND};
+    const UniqueBstr task_name(::SysAllocString(name.c_str()));
+    const auto status = folder->DeleteTask(task_name.get(), 0);
+    return SUCCEEDED(status) ? OperationResult{true, L"Scheduled task deleted", 0}
+                             : Failure(L"Delete scheduled task", HRESULT_CODE(status));
+  }
   if (entry.source == StartupSource::registry_run) {
     HKEY root = nullptr;
     REGSAM view = 0;

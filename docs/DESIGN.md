@@ -11,7 +11,7 @@ The application manages user-facing auto-start mechanisms. The MVP includes:
 | `HKCU/HKLM ...\\CurrentVersion\\Run` | yes | yes | yes | yes |
 | 32-bit and 64-bit registry views | yes | yes | yes | yes |
 | Per-user/all-users Startup folders | yes | yes | yes | shortcut |
-| Task Scheduler logon tasks | planned | planned | planned | later |
+| Task Scheduler logon tasks | yes | yes | yes | later |
 
 The MVP excludes services, drivers, browser extensions, AppX background tasks,
 Winlogon shell values, Group Policy, and undocumented startup locations. Those
@@ -85,12 +85,12 @@ validation, elevation routing, user confirmation policy, and refresh.
 
 ## Privilege model
 
-The main process runs as the interactive user. User-scope changes happen in
-process. Machine-scope changes are sent as a single, narrowly scoped request to
-an elevated helper. The request names the provider, operation, identity,
-fingerprint, and recovery record; it does not accept an arbitrary command line.
-The helper validates every path and registry location against an allowlist and
-exits after the operation.
+The preview starts as the interactive user. User-scope changes happen in
+process. An explicit **Restart as administrator** action relaunches the same
+signed executable through UAC for machine-scope and scheduled-task changes.
+The intended stable design remains a single-operation elevated helper whose
+request names the provider, operation, identity, fingerprint, and recovery
+record and never accepts an arbitrary command line.
 
 The helper protocol should use a versioned, length-prefixed message over a named
 pipe restricted to the launching user and Administrators. The elevated process

@@ -17,7 +17,7 @@ set(CMAKE_SKIP_INSTALL_RULES FALSE)
 
 add_library(startup-manager-core src/startup_manager.cpp src/startup_manager.h src/startup_entry.h)
 target_include_directories(startup-manager-core PUBLIC src)
-target_link_libraries(startup-manager-core PUBLIC shell32 ole32)
+target_link_libraries(startup-manager-core PUBLIC shell32 ole32 taskschd)
 target_compile_features(startup-manager-core PUBLIC cxx_std_20)
 
 add_executable(startup-manager WIN32 src/main.cpp src/startup-manager.rc src/resource.h

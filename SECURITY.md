@@ -8,5 +8,6 @@ The application does not classify software as safe or malicious. It displays
 Windows startup configuration and performs only the explicit operation selected
 by the user. Prefer disabling an entry before deleting it.
 
-The current preview does not mutate machine-wide entries. This remains a safety
-boundary until the elevated helper protocol and its tests are complete.
+The process starts unelevated. Machine-wide mutations and scheduled-task changes
+require the user to choose **Restart as administrator** and accept Windows UAC.
+A narrower one-operation elevated helper is planned for a future release.

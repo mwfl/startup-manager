@@ -9,7 +9,7 @@
 using mwfl::operator""_dip;
 namespace {
 constexpr mwfl::ControlId kRefresh{100}, kAdd{101}, kDisable{102}, kEnable{103},
-    kDelete{104}, kList{105}, kFilter{106};
+    kDelete{104}, kList{105}, kFilter{106}, kAdmin{107};
 
 class EntryListModel final : public mwfl::VirtualListModel {
  public:
@@ -64,6 +64,7 @@ class MainWindow final : public mwfl::WindowBase {
     ui.Add(disable_, kDisable, L"Disable");
     ui.Add(enable_, kEnable, L"Enable");
     ui.Add(delete_, kDelete, L"Delete…");
+    ui.Add(admin_, kAdmin, L"Restart as administrator");
     ui.Add(filter_, kFilter, L"");
     ui.Add(summary_, L"Inspecting startup entries…");
     ui.Add(list_, kList, mwfl::ListViewOptions{.virtual_data = true});
@@ -91,6 +92,7 @@ class MainWindow final : public mwfl::WindowBase {
                            .Add(disable_, mwfl::Auto())
                            .Add(enable_, mwfl::Auto())
                            .Add(delete_, mwfl::Auto())
+                           .Add(admin_, mwfl::Auto())
                            .Add(filter_, mwfl::Stretch()),
                        mwfl::Auto())
                   .Add(summary_, mwfl::Auto())
@@ -107,6 +109,15 @@ class MainWindow final : public mwfl::WindowBase {
     if (event.IsClicked(disable_)) { Mutate(0); return mwfl::EventResult::Handled(); }
     if (event.IsClicked(enable_)) { Mutate(1); return mwfl::EventResult::Handled(); }
     if (event.IsClicked(delete_)) { Mutate(2); return mwfl::EventResult::Handled(); }
+    if (event.IsClicked(admin_)) {
+      wchar_t executable[MAX_PATH]{};
+      if (::GetModuleFileNameW(nullptr, executable, MAX_PATH)) {
+        const auto result = reinterpret_cast<INT_PTR>(::ShellExecuteW(
+            GetHwnd(), L"runas", executable, nullptr, nullptr, SW_SHOWNORMAL));
+        if (result > 32) ::PostMessageW(GetHwnd(), WM_CLOSE, 0, 0);
+      }
+      return mwfl::EventResult::Handled();
+    }
     return mwfl::EventResult::Propagate();
   }
 
@@ -129,6 +140,7 @@ class MainWindow final : public mwfl::WindowBase {
   void Refresh() {
     auto discovered = std::make_shared<startup_manager::DiscoveryResult>(startup_manager::Discover());
     result_ = std::move(discovered);
+    admin_.SetEnabled(!startup_manager::IsProcessElevated());
     ApplyFilter();
     details_.SetText(result_->diagnostics.empty()
                          ? L"Select an entry to inspect its exact command and location."
@@ -176,8 +188,7 @@ class MainWindow final : public mwfl::WindowBase {
     if (!entry) { ::MessageBoxW(GetHwnd(), L"Select a startup entry first.", L"Startup Manager",
                                 MB_OK | MB_ICONINFORMATION); return; }
     if (!entry->writable) {
-      ::MessageBoxW(GetHwnd(),
-                    L"Machine-wide entries are inspection-only in this preview.",
+      ::MessageBoxW(GetHwnd(), L"Restart as administrator to change this machine-wide entry.",
                     L"Startup Manager", MB_OK | MB_ICONINFORMATION);
       return;
     }
@@ -197,7 +208,7 @@ class MainWindow final : public mwfl::WindowBase {
 
   std::shared_ptr<startup_manager::DiscoveryResult> result_;
   std::shared_ptr<EntryListModel> model_;
-  mwfl::Button refresh_, add_, disable_, enable_, delete_;
+  mwfl::Button refresh_, add_, disable_, enable_, delete_, admin_;
   mwfl::TextBox filter_, details_;
   mwfl::Label summary_;
   mwfl::ListView list_;

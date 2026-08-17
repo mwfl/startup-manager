@@ -14,6 +14,7 @@ struct DiscoveryResult {
 };
 
 DiscoveryResult Discover();
+bool IsProcessElevated();
 OperationResult Disable(const StartupEntry& entry);
 OperationResult Enable(const StartupEntry& entry);
 OperationResult Delete(const StartupEntry& entry);

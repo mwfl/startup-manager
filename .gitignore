@@ -1,6 +1,7 @@
 /build/
 /dist/
 /dist-preview/
+/startup-manager-windows-x64.zip
 /.vs/
 *.user
 *.suo
