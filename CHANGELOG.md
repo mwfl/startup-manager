@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.1 - 2026-08-18
+
+- Add daily GitHub Release update checks with configurable reminders.
+- Publish versioned Portable ZIP releases with SHA-256 checksums.
+
 ## 0.1.0 - 2026-08-17
 
 - Discover current-user and all-users Startup folders.
