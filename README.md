@@ -36,6 +36,8 @@ ctest --preset vs2026-x64-release
 ```
 
 Visual Studio 2026 with the MSVC C++20 toolchain is the target environment.
+Standalone builds fetch the pinned MWFL `v0.2.0` release; the default local
+development preset uses the neighboring mwfl checkout.
 
 ## Download and usage
 
