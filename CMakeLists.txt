@@ -13,7 +13,7 @@ set(MWFL_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 if(STARTUP_MANAGER_USE_LOCAL_MWFL)
   add_subdirectory("${STARTUP_MANAGER_MWFL_SOURCE_DIR}" "${CMAKE_BINARY_DIR}/mwfl" EXCLUDE_FROM_ALL)
 else()
-  FetchContent_Declare(mwfl GIT_REPOSITORY https://github.com/mwfl/mwfl.git GIT_TAG v0.1.0)
+  FetchContent_Declare(mwfl GIT_REPOSITORY https://github.com/mwfl/mwfl.git GIT_TAG 06e085c74a209574c292fbee6302ce3676120256)
   FetchContent_GetProperties(mwfl)
   if(NOT mwfl_POPULATED)
     FetchContent_Populate(mwfl)
@@ -23,7 +23,7 @@ endif()
 
 add_library(startup-manager-core src/startup_manager.cpp src/startup_manager.h src/startup_entry.h)
 target_include_directories(startup-manager-core PUBLIC src)
-target_link_libraries(startup-manager-core PUBLIC shell32 ole32 taskschd)
+target_link_libraries(startup-manager-core PUBLIC mwfl::security mwfl::deployment shell32 ole32 taskschd)
 target_compile_features(startup-manager-core PUBLIC cxx_std_20)
 
 add_executable(startup-manager WIN32 src/main.cpp src/startup-manager.rc src/resource.h

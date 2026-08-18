@@ -1,8 +1,12 @@
 #include "startup_manager.h"
 
+#include <mwfl/deployment.h>
+#include <mwfl/security.h>
+
 #include <algorithm>
 #include <array>
 #include <cwctype>
+#include <format>
 #include <windows.h>
 #include <knownfolders.h>
 #include <memory>
@@ -338,14 +342,8 @@ OperationResult SetTaskEnabled(const StartupEntry& entry, bool enabled) {
 }  // namespace
 
 bool IsProcessElevated() {
-  HANDLE raw_token = nullptr;
-  if (!::OpenProcessToken(::GetCurrentProcess(), TOKEN_QUERY, &raw_token)) return false;
-  const auto close_token = [](HANDLE value) { if (value) ::CloseHandle(value); };
-  const std::unique_ptr<void, decltype(close_token)> token(raw_token, close_token);
-  TOKEN_ELEVATION elevation{};
-  DWORD size = 0;
-  return ::GetTokenInformation(token.get(), TokenElevation, &elevation, sizeof(elevation),
-                               &size) && elevation.TokenIsElevated != 0;
+  const auto identity = mwfl::QueryCurrentProcessIdentity();
+  return identity && identity.Value().elevated;
 }
 
 std::wstring SourceName(StartupSource source) {
@@ -411,6 +409,28 @@ DiscoveryResult Discover() {
   });
   if (elevated)
     for (auto& entry : result.entries) entry.writable = true;
+  for (auto& entry : result.entries) {
+    const std::filesystem::path executable = ExtractExecutable(entry.command);
+    std::error_code file_error;
+    if (executable.empty() || !std::filesystem::is_regular_file(executable, file_error)) continue;
+    if (const auto version = mwfl::QueryFileVersion(executable); version) {
+      entry.target_version = std::format(L"{}.{}.{}.{}", version.Value().major,
+                                         version.Value().minor, version.Value().build,
+                                         version.Value().revision);
+    }
+    if (const auto signature = mwfl::VerifyAuthenticode(
+            executable, mwfl::RevocationPolicy::Offline); signature) {
+      switch (signature.Value().status) {
+        case mwfl::SignatureStatus::Valid: entry.signature_status = L"Valid"; break;
+        case mwfl::SignatureStatus::Unsigned: entry.signature_status = L"Unsigned"; break;
+        case mwfl::SignatureStatus::Untrusted: entry.signature_status = L"Untrusted"; break;
+        case mwfl::SignatureStatus::Invalid: entry.signature_status = L"Invalid"; break;
+        case mwfl::SignatureStatus::RevocationUnavailable:
+          entry.signature_status = L"Revocation unavailable";
+          break;
+      }
+    }
+  }
   if (SUCCEEDED(initialized)) ::CoUninitialize();
   return result;
 }

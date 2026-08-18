@@ -19,6 +19,8 @@ struct StartupEntry {
   StartupState state{};
   bool writable{};
   bool target_exists{};
+  std::wstring target_version;
+  std::wstring signature_status;
 };
 
 struct OperationResult {

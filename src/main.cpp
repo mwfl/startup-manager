@@ -166,6 +166,8 @@ class MainWindow final : public mwfl::WindowBase {
                      startup_manager::SourceName(entry->source) + L" · " +
                      startup_manager::ScopeName(entry->scope) + L"\r\nLocation: " +
                      entry->location + L"\r\nCommand: " + entry->command +
+                     (entry->target_version.empty() ? L"" : L"\r\nVersion: " + entry->target_version) +
+                     (entry->signature_status.empty() ? L"" : L"\r\nSignature: " + entry->signature_status) +
                      (entry->target_exists ? L"" : L"\r\nWarning: target could not be found."));
     disable_.SetEnabled(entry->writable &&
                         entry->state == startup_manager::StartupState::enabled);
