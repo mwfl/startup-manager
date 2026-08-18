@@ -26,10 +26,11 @@ target_include_directories(startup-manager-core PUBLIC src)
 target_link_libraries(startup-manager-core PUBLIC mwfl::security mwfl::deployment shell32 ole32 taskschd)
 target_compile_features(startup-manager-core PUBLIC cxx_std_20)
 
-add_executable(startup-manager WIN32 src/main.cpp src/startup-manager.rc src/resource.h
+add_executable(startup-manager WIN32 src/main.cpp update_checker.cpp update_checker.h src/startup-manager.rc src/resource.h
   app-icon.ico app.manifest)
-target_link_libraries(startup-manager PRIVATE startup-manager-core mwfl::ui shell32)
+target_link_libraries(startup-manager PRIVATE startup-manager-core mwfl::ui shell32 winhttp comctl32 advapi32)
 target_compile_features(startup-manager PRIVATE cxx_std_20)
+target_compile_definitions(startup-manager PRIVATE MWFL_APP_VERSION=L\"${PROJECT_VERSION}\")
 
 enable_testing()
 add_executable(startup-manager-tests tests/startup_entry_test.cpp)

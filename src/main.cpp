@@ -5,9 +5,11 @@
 
 #include "resource.h"
 #include "startup_manager.h"
+#include "../update_checker.h"
 
 using mwfl::operator""_dip;
 namespace {
+mwfl_examples::UpdateChecker g_update_checker;
 constexpr mwfl::ControlId kRefresh{100}, kAdd{101}, kDisable{102}, kEnable{103},
     kDelete{104}, kList{105}, kFilter{106}, kAdmin{107};
 
@@ -100,6 +102,9 @@ class MainWindow final : public mwfl::WindowBase {
                   .Add(details_, mwfl::Fixed(150.0_dip)));
     SetAppearance({});
     Refresh();
+    g_update_checker.Attach(
+        GetHwnd(), {L"MWFL Startup Manager", L"startup-manager", MWFL_APP_VERSION,
+                    L"Software\\mwfl\\Examples\\StartupManager\\Updates"});
   }
 
   mwfl::EventResult OnCommand(const mwfl::CommandEvent& event) override {

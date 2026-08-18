@@ -54,3 +54,7 @@ documentation. Disabling is safer than deleting.
 - Narrowly scoped one-operation elevated helper to replace the elevated session mode.
 - Authenticode publisher details and durable operation history.
 - Startup-folder shortcut creation with separate arguments and working directory.
+
+## Updates and Portable releases
+
+The app checks the latest stable GitHub Release at most once per day. Use **Settings > Automatically Check for Updates** to disable or re-enable checks, or **Check for Updates** to run one manually. An available update can open the official Portable release, be deferred for three days or one week, or dismissed until the next day. Tag releases publish a versioned `windows-x64-portable.zip` plus a SHA-256 checksum; replacement is always an explicit download-and-extract action.
