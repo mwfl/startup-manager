@@ -5,11 +5,11 @@
 
 #include "resource.h"
 #include "startup_manager.h"
-#include "../update_checker.h"
+#include <mwfl/app_support/update_checker.h>
 
 using mwfl::operator""_dip;
 namespace {
-mwfl_examples::UpdateChecker g_update_checker;
+mwfl::app_support::UpdateChecker g_update_checker;
 constexpr mwfl::ControlId kRefresh{100}, kAdd{101}, kDisable{102}, kEnable{103},
     kDelete{104}, kList{105}, kFilter{106}, kAdmin{107};
 

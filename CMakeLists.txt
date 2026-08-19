@@ -13,22 +13,21 @@ set(MWFL_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 if(STARTUP_MANAGER_USE_LOCAL_MWFL)
   add_subdirectory("${STARTUP_MANAGER_MWFL_SOURCE_DIR}" "${CMAKE_BINARY_DIR}/mwfl" EXCLUDE_FROM_ALL)
 else()
-  FetchContent_Declare(mwfl GIT_REPOSITORY https://github.com/mwfl/mwfl.git GIT_TAG v0.2.0)
+  FetchContent_Declare(mwfl GIT_REPOSITORY https://github.com/mwfl/mwfl.git GIT_TAG v0.2.1)
   FetchContent_GetProperties(mwfl)
   if(NOT mwfl_POPULATED)
     FetchContent_Populate(mwfl)
     add_subdirectory("${mwfl_SOURCE_DIR}" "${mwfl_BINARY_DIR}" EXCLUDE_FROM_ALL)
   endif()
 endif()
-
 add_library(startup-manager-core src/startup_manager.cpp src/startup_manager.h src/startup_entry.h)
 target_include_directories(startup-manager-core PUBLIC src)
 target_link_libraries(startup-manager-core PUBLIC mwfl::security mwfl::deployment shell32 ole32 taskschd)
 target_compile_features(startup-manager-core PUBLIC cxx_std_20)
 
-add_executable(startup-manager WIN32 src/main.cpp update_checker.cpp update_checker.h src/startup-manager.rc src/resource.h
+add_executable(startup-manager WIN32 src/main.cpp src/startup-manager.rc src/resource.h
   app-icon.ico app.manifest)
-target_link_libraries(startup-manager PRIVATE startup-manager-core mwfl::ui shell32 winhttp comctl32 advapi32)
+target_link_libraries(startup-manager PRIVATE startup-manager-core mwfl::app shell32 advapi32)
 target_compile_features(startup-manager PRIVATE cxx_std_20)
 target_compile_definitions(startup-manager PRIVATE MWFL_APP_VERSION=L\"${PROJECT_VERSION}\")
 

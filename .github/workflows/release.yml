@@ -1,32 +1,15 @@
 name: Release
-
 on:
   push:
-    tags: ["v*"]
-
-permissions:
-  contents: write
-
+    tags: ['v*']
 jobs:
   release:
-    runs-on: windows-2025
-    steps:
-      - uses: actions/checkout@v4
-      - uses: ilammy/msvc-dev-cmd@v1
-      - run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
-      - run: cmake --build build
-      - run: ctest --test-dir build --output-on-failure
-      - run: cmake --install build --prefix dist
-      - name: Package Portable app
-        shell: pwsh
-        run: |
-          $archive = "startup-manager-$env:GITHUB_REF_NAME-windows-x64-portable.zip"
-          Compress-Archive -Path dist/* -DestinationPath $archive
-          (Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant() + "  " + $archive |
-            Set-Content "$archive.sha256" -Encoding ascii
-      - uses: softprops/action-gh-release@v2
-        with:
-          generate_release_notes: true
-          files: |
-            startup-manager-*-windows-x64-portable.zip
-            startup-manager-*-windows-x64-portable.zip.sha256
+    permissions: {contents: write, id-token: write, attestations: write}
+    uses: mwfl/.github/.github/workflows/portable-release.yml@824b78e7b1e880348562bd581f514ec581ba2639
+    with:
+      configure-preset: vs2026-x64
+      build-preset: vs2026-x64-release
+      test-preset: vs2026-x64-release
+      build-directory: build/vs2026-x64
+      artifact-slug: startup-manager
+      release-title: MWFL Startup Manager
