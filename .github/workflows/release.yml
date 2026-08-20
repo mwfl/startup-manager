@@ -1,16 +1,69 @@
 name: Release
+
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing release tag to build and publish
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
 jobs:
   release:
-    permissions: {contents: write, id-token: write, attestations: write}
-    uses: mwfl/.github/.github/workflows/portable-release.yml@824b78e7b1e880348562bd581f514ec581ba2639
-    with:
-      configure-preset: vs2026-x64
-      configure-args: -DSTARTUP_MANAGER_USE_LOCAL_MWFL=OFF
-      build-preset: vs2026-x64-release
-      test-preset: vs2026-x64-release
-      build-directory: build/vs2026-x64
-      artifact-slug: startup-manager
-      release-title: MWFL Startup Manager
+    runs-on: windows-2025-vs2026
+    env:
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+
+      - name: Configure
+        run: cmake --preset vs2026-x64 -DSTARTUP_MANAGER_USE_LOCAL_MWFL=OFF
+
+      - name: Build
+        run: cmake --build --preset vs2026-x64-release --parallel 2
+
+      - name: Test
+        run: ctest --preset vs2026-x64-release --output-on-failure
+
+      - name: Stage portable package
+        shell: pwsh
+        run: |
+          $archive = "startup-manager-$env:RELEASE_TAG-windows-x64-portable.zip"
+          cmake --install build/vs2026-x64 --config Release --prefix package --component Application
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Compress-Archive -Path package/* -DestinationPath $archive
+          $hash = (Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $archive" | Set-Content "$archive.sha256" -Encoding ascii
+          "PORTABLE_ARCHIVE=$archive" | Out-File $env:GITHUB_ENV -Append
+
+      - name: Attest portable package
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be
+        with:
+          subject-path: ${{ env.PORTABLE_ARCHIVE }}
+
+      - name: Publish GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $assets = @($env:PORTABLE_ARCHIVE, "$env:PORTABLE_ARCHIVE.sha256")
+          gh release view $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $env:RELEASE_TAG @assets --clobber --repo $env:GITHUB_REPOSITORY
+          } else {
+            $arguments = @('release', 'create', $env:RELEASE_TAG) + $assets + @(
+              '--repo', $env:GITHUB_REPOSITORY, '--generate-notes',
+              '--title', "MWFL Startup Manager $env:RELEASE_TAG")
+            if ($env:RELEASE_TAG -match '-') { $arguments += '--prerelease' }
+            gh @arguments
+          }
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
