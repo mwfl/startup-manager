@@ -14,6 +14,10 @@ int main() {
   assert(ExtractExecutable(L"\"C:\\Program Files\\Example\\app.exe\" --quiet") ==
          L"C:\\Program Files\\Example\\app.exe");
   assert(ExtractExecutable(L"C:\\Tools\\app.exe --quiet") == L"C:\\Tools\\app.exe");
+  assert(ExtractExecutable(L"  C:\\Tools\\app.exe\t--quiet") == L"C:\\Tools\\app.exe");
+  assert(ExtractExecutable(L"\"C:\\Program Files\\Example\\app.exe\"") ==
+         L"C:\\Program Files\\Example\\app.exe");
+  assert(ExtractExecutable(L"   ").empty());
   const auto discovered = Discover();
   std::unordered_set<std::wstring> identities;
   for (const auto& item : discovered.entries) {
