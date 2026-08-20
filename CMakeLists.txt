@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(startup_manager VERSION 0.1.1 LANGUAGES CXX)
+project(startup_manager VERSION 0.1.0 LANGUAGES CXX)
 
 if(POLICY CMP0169)
   cmake_policy(SET CMP0169 OLD)

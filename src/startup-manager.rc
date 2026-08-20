@@ -14,11 +14,11 @@ BEGIN
     BEGIN
       VALUE "CompanyName", "mwfl contributors\0"
       VALUE "FileDescription", "MWFL Startup Manager\0"
-      VALUE "FileVersion", "0.1.1\0"
+      VALUE "FileVersion", "0.1.0\0"
       VALUE "InternalName", "startup-manager\0"
       VALUE "OriginalFilename", "startup-manager.exe\0"
       VALUE "ProductName", "MWFL Startup Manager\0"
-      VALUE "ProductVersion", "0.1.1\0"
+      VALUE "ProductVersion", "0.1.0\0"
     END
   END
   BLOCK "VarFileInfo"
