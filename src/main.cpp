@@ -21,6 +21,7 @@ class EntryListModel final : public mwfl::VirtualListModel {
     rows_.clear();
     std::ranges::transform(filter, filter.begin(), ::towlower);
     if (!result_) return;
+    rows_.reserve(result_->entries.size());
     for (std::size_t i = 0; i < result_->entries.size(); ++i) {
       auto haystack = result_->entries[i].name + L" " + result_->entries[i].command + L" " +
                       result_->entries[i].location;

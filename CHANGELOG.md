@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.1 - 2026-08-20
+
+- Reduce refresh overhead by reusing elevation and executable metadata results.
+- Improve filtering allocation behavior and executable-command parsing coverage.
+- Keep executable resource metadata consistent with the application version.
+
 ## 0.1.0 - 2026-08-19
 
 - Add daily GitHub Release update checks with configurable reminders.

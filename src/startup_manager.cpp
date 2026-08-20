@@ -12,6 +12,7 @@
 #include <memory>
 #include <shlobj.h>
 #include <taskschd.h>
+#include <unordered_map>
 #include <wrl/client.h>
 
 namespace startup_manager {
@@ -228,7 +229,7 @@ ComPtr<ITaskService> ConnectTaskService() {
   return service;
 }
 
-void DiscoverTaskFolder(DiscoveryResult& result, ITaskFolder* folder) {
+void DiscoverTaskFolder(DiscoveryResult& result, ITaskFolder* folder, bool elevated) {
   ComPtr<IRegisteredTaskCollection> tasks;
   if (SUCCEEDED(folder->GetTasks(TASK_ENUM_HIDDEN, &tasks)) && tasks) {
     LONG count = 0;
@@ -289,7 +290,7 @@ void DiscoverTaskFolder(DiscoveryResult& result, ITaskFolder* folder) {
                                 StartupSource::scheduled_task, StartupScope::all_users,
                                 enabled == VARIANT_TRUE ? StartupState::enabled
                                                         : StartupState::disabled,
-                                IsProcessElevated(),
+                                elevated,
                                 executable.empty() || std::filesystem::exists(executable)});
     }
   }
@@ -303,7 +304,7 @@ void DiscoverTaskFolder(DiscoveryResult& result, ITaskFolder* folder) {
     item.lVal = index;
     ComPtr<ITaskFolder> child;
     if (SUCCEEDED(folders->get_Item(item, &child)) && child)
-      DiscoverTaskFolder(result, child.Get());
+      DiscoverTaskFolder(result, child.Get(), elevated);
   }
 }
 
@@ -399,7 +400,7 @@ DiscoveryResult Discover() {
     ComPtr<ITaskFolder> root;
     const UniqueBstr root_path(::SysAllocString(L"\\"));
     if (SUCCEEDED(service->GetFolder(root_path.get(), &root)) && root)
-      DiscoverTaskFolder(result, root.Get());
+      DiscoverTaskFolder(result, root.Get(), elevated);
   } else {
     result.diagnostics.push_back(L"Task Scheduler could not be read.");
   }
@@ -409,10 +410,22 @@ DiscoveryResult Discover() {
   });
   if (elevated)
     for (auto& entry : result.entries) entry.writable = true;
+  struct TargetMetadata {
+    std::wstring version;
+    std::wstring signature_status;
+  };
+  std::unordered_map<std::wstring, TargetMetadata> metadata_cache;
   for (auto& entry : result.entries) {
     const std::filesystem::path executable = ExtractExecutable(entry.command);
     std::error_code file_error;
     if (executable.empty() || !std::filesystem::is_regular_file(executable, file_error)) continue;
+    auto cache_key = executable.lexically_normal().wstring();
+    std::ranges::transform(cache_key, cache_key.begin(), ::towlower);
+    if (const auto cached = metadata_cache.find(cache_key); cached != metadata_cache.end()) {
+      entry.target_version = cached->second.version;
+      entry.signature_status = cached->second.signature_status;
+      continue;
+    }
     if (const auto version = mwfl::QueryFileVersion(executable); version) {
       entry.target_version = std::format(L"{}.{}.{}.{}", version.Value().major,
                                          version.Value().minor, version.Value().build,
@@ -430,6 +443,8 @@ DiscoveryResult Discover() {
           break;
       }
     }
+    metadata_cache.emplace(std::move(cache_key),
+                           TargetMetadata{entry.target_version, entry.signature_status});
   }
   if (SUCCEEDED(initialized)) ::CoUninitialize();
   return result;
